@@ -43,7 +43,7 @@ class User():
 
 
     def __repr__(self):
-        return f"User({self.name}, {self.id})"
+        return f"{self.__class__.__name__}({self.name}, {self.id})"
 
 
 

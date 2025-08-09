@@ -16,7 +16,12 @@ class SheetManager:
         self._cache = {}
 
 
-    def get_sheet(self, title: str, worksheet_class: WorksheetWrapper) -> Worksheet:
+    def is_empty(self) -> bool:
+        """Checks to see if the spreadsheet is empty"""
+        return self.list_sheet_titles() == ["Sheet1"]
+    
+
+    def get_sheet(self, title: str, worksheet_class: WorksheetWrapper=WorksheetWrapper) -> Worksheet:
         """Retrieves a single worksheet object and returns it"""
         logger.info(f"Retrieving worksheet {title} from {self}")
 
@@ -24,9 +29,23 @@ class SheetManager:
             ws = self.spreadsheet.worksheet(title)
             self._cache[title] = worksheet_class(ws)
         return self._cache[title]
-    
 
-    def create_sheet(self, new_title: str, worksheet_class: WorksheetWrapper, rows: int=100, cols: int=26) -> Worksheet:
+
+    def rename_sheet(self, new_title: str, title: str="Sheet1"):
+        """Renames a worksheet within the spreasheet to something else"""
+        
+        if title not in self._cache.keys():
+            logger.error(f"No worksheet named {title} initialized in {self}. use get_sheet first. unable to rename.")
+
+        else:
+            logger.info(f"Renaming {title} to {new_title} in {self}")
+            wswrapper = self._cache.pop(title)
+            wswrapper.ws.update_title(new_title)
+            wswrapper.title = new_title
+            self._cache[new_title] = wswrapper
+
+
+    def create_sheet(self, new_title: str, worksheet_class: WorksheetWrapper=WorksheetWrapper, rows: int=100, cols: int=26) -> Worksheet:
         """Creates a new worksheet and adds it to the _cache"""
         logger.info(f"Creating a new Worksheet {new_title} in {self}")
 
@@ -65,7 +84,16 @@ class SheetManager:
 
         for ws in self._cache.values():
             ws.clear()
-
+        
+        while len(self.list_sheet_titles()) > 1:
+            next_sheet = self.list_sheet_titles()[-1]
+            logger.info(f"Deleting Worksheet {next_sheet} from {self}")
+            
+            self.spreadsheet.del_worksheet(self._cache[next_sheet].ws)
+        
+        self.rename_sheet("Sheet1", title=self.list_sheet_titles()[0])
+        self.clear_cache()
+    
     
     def __repr__(self):
         return f"{self.__class__.__name__}({self.name}, {self.id})"

@@ -44,3 +44,11 @@ def build_range(start_cell: str, num_rows: int, num_cols: int):
     end_cell = rowcol_to_a1(end_row, end_col)
 
     return f"{start_cell}:{end_cell}"
+
+
+def sanitize_matrix(matrix: list[list], default_val: str="N/A"):
+    """Replaces all null values with default value in a matrix"""
+    return [
+        [cell if cell is not None else default_val for cell in row]
+        for row in matrix
+    ]

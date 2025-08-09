@@ -65,7 +65,7 @@ class League():
     
 
     def __repr__(self):
-        return f"League({self.name}, {self.id}, {self.status})"
+        return f"{self.__class__.__name__}({self.name}, {self.id}, {self.status})"
 
 
 
