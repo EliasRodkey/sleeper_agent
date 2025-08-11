@@ -28,7 +28,7 @@ def convert_single_level_dict_items_to_row(unique_id: int, dictionnary: dict) ->
     """
     logger.debug(f"Converting dictionary to item row list.")
 
-    row_list = [item for item in dictionnary.items()]
+    row_list = list(dictionnary.values())
     row_list.insert(0, unique_id)
 
     return row_list

@@ -1,6 +1,7 @@
 import datetime
 import logging
 from gspread import Spreadsheet, Worksheet
+import pandas as pd
 from pprint import pprint
 
 from sleeper.sleeper_api import get_players
@@ -17,113 +18,66 @@ logger = logging.getLogger(__name__)
 
 class PlayersDataWorksheet(WorksheetWrapper):
     """Google sheets WorksheetWrapper subclass that contains information on current NFL players"""
-    ALL_PlAYER_ATTRIBUTES = [
-        "hashtag", "depth_chart_position", "status", "sport",
-        "fantasy_positions", "number", "search_last_name",
-        "injury_start_date", "weight", "position",
-        "practice_participation", "sportradar_id", "team",
-        "last_name", "college", "fantasy_data_id", "injury_status",
-        "player_id", "height", "search_full_name", "age", "stats_id",
-        "birth_country", "espn_id", "search_rank", "first_name",
-        "depth_chart_order", "years_exp", "rotowire_id", "rotoworld_id",
-        "search_first_name", "yahoo_id"
-    ]
-    DELETED_ATTRIBUTES = [
-        "hashtag", "sport", "search_last_name", "search_first_name",
-        "sportradar_id", "fantasy_data_id", "player_id", "stats_id",
-        "espn_id", "rotowire_id", "rotoworld_id", "yahoo_id"
-    ]
+    
+    DELETED_ATTRIBUTUES = ["metadata", "competitions", "player_id", "injury_notes", "sport"]
+
+    FANTASY_PLAYER_POSITIONS = ["WR", "RB", "QB", "TE", "K", "DEF"]
 
     def __init__(self, worksheet: Worksheet):
         super().__init__(worksheet)
 
         self.append_row(["foo", "bar"])
 
-        if self.is_empty() or self.requires_update():
-            self.update_worksheet()
+        if self.is_empty():
+            logger.error(f"Worksheet not empty! we have a problem {self.is_empty()}")
+            self.update_players()
 
         logger.info(f"{self} Initialized")
 
 
-    def update_worksheet(self):
-        """Updates the current worksheet by clearing it, adding headers, then adding players"""
-        logger.info(f"Refreshing {self} with updated values")
-        self.clear()
-        self.add_headers()
-        self.update_players()
-
-
-    def update_players(self):
+    def update_players(self, default_val: str="N/A"):
         """Uses the sleeper API to update the information on all the players in the spreadsheet"""
         logger.info(f"Updating player data on {self}")
 
-        players_dict = get_players()
-        player_matrix = []
+        players_df = pd.DataFrame.from_dict(get_players())
+        clean_players_df = self.clean_df(players_df, default_val=default_val)
 
-        for player_id in players_dict.keys():
-            player_info = players_dict.get(player_id)
-            pprint(player_info)
-            
-            for attribute in self.DELETED_ATTRIBUTES:
-                try:
-                    del player_info[attribute]
-                except KeyError as e:
-                    logger.warning(f"Player {player_info['first_name']} {player_info['last_name']} has to attribute: {attribute}, skipping deletion")
-            
-            player_row = convert_single_level_dict_items_to_row(player_id, player_info)
-
-            if not player_info.keys() == self.headers:
-                for i, attribute in enumerate(self.headers):
-                    if attribute not in player_info.keys():
-                        player_row.insert(i, "N/A")
-            
-            player_matrix.append(player_row)
+        # clean_players_df.to_excel("players_df_output.xlsx", index=False)
+        self.write_dataframe(clean_players_df, clear=True, include_index=True)
 
 
-        sanitized_player_matrix = sanitize_matrix(player_matrix)
-        pprint(sanitized_player_matrix)
-        self.append_rows(sanitized_player_matrix)
-    
+    def clean_df(self, players_df: pd.DataFrame, default_val: str="N/A") -> pd.DataFrame:
+        """Cleans the raw player dataframe by removing extra columns and replacing null / unnacceptable value types"""
+        logger.info(f"Cleaning player info Dataframe for worksheet upload")
 
-    def retrieve_player_data(self) -> dict:
-        """Retrieves the player data from the players Worksheet and returns it to the sleeper format (minus the DELETED attributes)"""
-        logger.info(f"Retrieving NFL player data from {self}")
+        players_df = players_df.T
+        players_df.set_index("player_id", inplace=True)
 
-        player_records = self.get_records()
-        players_info_dict = {}
+        players_df.dropna(axis=1, how="all", inplace=True)
+        players_df.drop(columns=self.DELETED_ATTRIBUTUES, errors="ignore", inplace=True)
 
-        for player in player_records:
-            players_info_dict["player_id"] = player
-        
-        return players_info_dict
+        # Remove players with no offensive fantasy position
+        players_df = players_df[
+            players_df["fantasy_positions"].apply(
+                lambda x: isinstance(x, list) and any(pos in x for pos in self.FANTASY_PLAYER_POSITIONS)
+            )
+        ]
+
+        # Convert fnatasy_positions to string
+        players_df["fantasy_positions"] = players_df["fantasy_positions"].apply(lambda x: ", ".join(x) if isinstance(x, list) else default_val)
+
+        # Remove duplicate and inactive players
+        players_df = players_df[
+            ~players_df["full_name"].isin(["Duplicate Player", "TreVeyon Henderson DUPLICATE"])
+        ]
+        players_df = players_df[~((players_df["active"] == False))]
+
+        # Fill nulls
+        for col in players_df.columns:
+            players_df[col] = players_df[col].astype(str).fillna(default_val)
 
 
-    def retrieve_headers(self) -> list[str]:
-        """Collecting the headers currently on the players data worksheet"""
-        logger.info(f"Retrieving current headers on {self}")
-        return self.get_list_matrix()[0]
-
-
-    def add_headers(self):
-        """Adds the data headers to the players data worksheet"""
-        logger.info(f"Adding headers {self.headers} to {self}")
-        self.append_row(self.headers)
-
-
-    @property
-    def headers(self):
-        headers = []
-        for header in self.ALL_PlAYER_ATTRIBUTES:
-            if header not in self.DELETED_ATTRIBUTES:
-                headers.append(header)
-        headers.insert(0, "player_id")
-        return headers
-    
-
-    def requires_update(self):
-        """Checks to see if the headers in the current worksheet match the headers in the PlayersDataWorksheet wrapper"""
-        logger.info(f"Checking if update needed for {self} headers")
-        return not self.retrieve_headers() == self.headers
+        return players_df    
 
 
 
@@ -135,8 +89,8 @@ class UpdateLogWorksheet(WorksheetWrapper):
     def __init__(self, worksheet: Worksheet):
         super().__init__(worksheet)
 
-        if self.is_empty():
-            self.append_row(self.HEADERS)
+        if self.is_empty() or not self.retrieve_headers():
+            self.write_cell_range([self.HEADERS])
 
         logger.info(f"{self} Initialized")
     
@@ -201,18 +155,49 @@ class PlayersSpreadsheet(SheetManager):
         logger.info(f"Creating new player data worksheet")
         self.get_sheet("Sheet1", PlayersDataWorksheet)
         self.rename_sheet(self.PLAYER_DATA)
-
     
 
-    @property
-    def update_log_ws(self):
-        return self._cache("update_logs")
+    def update_player_data(self, update_description: str):
+        """Updates the player data in the player_data worksheet and posts a time log"""
+        update = self.check_update_required()
+
+        if update:
+            player_ws = self.get_sheet(self.PLAYER_DATA)
+            player_ws.update_players()
+
+            logs_ws = self.get_sheet(self.UPDATE_LOGS)
+            logs_ws.post_log(description=update_description)
+        
+        else:
+            logger.info(f"Player data updated within 1 day, skipping update.")
+    
+
+    def check_update_required(self) -> bool:
+        """Checks the update_logs sheet to see if the last player update was within the last 24 hours"""
+        logs_ws = self.get_sheet(self.UPDATE_LOGS)
+        last_log = logs_ws.retrieve_last_log()
+
+        last_log_datetime_str = last_log["datetime_stamp"]
+        last_log_datetime_obj = datetime.datetime.strptime(last_log_datetime_str, "%Y-%m-%d %H:%M:%S")
+
+        return last_log_datetime_obj.date() < datetime.datetime.now().date()
+
+
+    def retrieve_player_data(self) -> pd.DataFrame:
+        """Retrieves the all of the player data from the spreadsheet and returns it as a pd.Dataframe"""
+        logger.info(f"Retrieving player data from {self}")
+        player_data_ws = self.get_sheet(self.PLAYER_DATA)
+        return player_data_ws.read_dataframe()
 
 
 
 if __name__ == "__main__":
     spreadsheet = get_spreadsheet(EFantasySpreadsheets.PLAYERS)
     player_spreadsheet = PlayersSpreadsheet(spreadsheet)
+
+    # player_spreadsheet.update_player_data(update_description="Test Sheet Update")
+
+    # print(player_spreadsheet.retrieve_player_data())
 
     # player_spreadsheet.clear_spreadsheet()
 

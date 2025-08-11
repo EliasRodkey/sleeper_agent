@@ -1,6 +1,9 @@
 # Google service account credentials
 spreadsheets/spreadsheet_credentials.json
 
+# Working module for concept testing
+working_mod.py
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
