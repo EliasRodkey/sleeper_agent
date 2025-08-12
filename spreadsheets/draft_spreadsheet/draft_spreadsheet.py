@@ -29,7 +29,7 @@ class DraftSpreadsheet(SheetManager):
     def __init__(self, spreadsheet: Spreadsheet, league: League, players_df: pd.DataFrame):
         super().__init__(spreadsheet)
 
-        self.players_df = players_df
+        self.players_df = self.sort_by_adp(players_df)
         self.league = league
 
         # if self.is_empty():
@@ -59,7 +59,7 @@ class DraftSpreadsheet(SheetManager):
         """Creates the draftboard worksheet inside of the draft spreadsheet"""
         logger.info(f"Creating new draftboard worksheet")
         draftboard_ws = self.create_sheet(self.DRAFTBOARD, DraftboardWorksheet)
-        draftboard_ws.set_league_and_players(self.league, self.players_df)
+        draftboard_ws.update_draftboard(self.players_df)
     
 
     def update_draftboard(self, picks: dict):
@@ -70,19 +70,9 @@ class DraftSpreadsheet(SheetManager):
             pass # do nothing
         else:
             pass # update
+    
 
-
-        
-
-
-
-if __name__ == "__main__":
-    from spreadsheets.players_spreadsheet.players_spreadsheet import PlayersSpreadsheet
-    spreadsheet = get_spreadsheet(EFantasySpreadsheets.PLAYERS)
-    players_spreadsheet = PlayersSpreadsheet(spreadsheet)
-    players_df = players_spreadsheet.retrieve_player_data()
-
-    league_id, league_info = User("thecondor").retrieve_league_info("Margaritaville")
-    league = League(league_id, league_info)
-    spreadsheet = get_spreadsheet(EFantasySpreadsheets.TEST)
-    draft_sheet = DraftSpreadsheet(spreadsheet, league, players_df)
+    def sort_by_adp(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Sorts the players dataframe by ADP gathered from FantasyFootballCalculator.com API"""
+        logger.info(f"Sorting players dataframe by ADP")
+        # TODO: Add weigths to full and standard, 0.4 * standard adp + 0.6 * full PPR ADP
