@@ -52,11 +52,11 @@ class PlayersSpreadsheet(SheetManager):
         self.rename_sheet(self.PLAYER_DATA)
     
 
-    def update_player_data(self, update_description: str):
+    def update_player_data(self, update_description: str, force: bool=False):
         """Updates the player data in the player_data worksheet and posts a time log"""
         update = self.check_update_required()
 
-        if update:
+        if update or force:
             player_ws = self.get_sheet(self.PLAYER_DATA)
             player_ws.update_players()
 

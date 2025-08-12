@@ -63,6 +63,9 @@ class PlayersDataWorksheet(WorksheetWrapper):
         ]
         players_df = players_df[~((players_df["active"] == False))]
 
+        # Add defense abbreviation to full_name column
+        players_df.loc[players_df['position'] == 'DEF', 'full_name'] = players_df.loc[players_df['position'] == 'DEF', 'team'] + ' Defense'
+
         # Fill nulls
         for col in players_df.columns:
             players_df[col] = players_df[col].astype(str).fillna(default_val)

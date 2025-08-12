@@ -1,15 +1,14 @@
 import logging
-from pprint import pprint
 import pandas as pd
+import re
 
-from spreadsheets.gspread_client import get_spreadsheet
-from spreadsheets.spreadsheet_names import EFantasySpreadsheets
 from spreadsheets.sheet_manager import SheetManager, Spreadsheet
 from spreadsheets.draft_spreadsheet.league_settings_worksheet import LeagueSettingsWorksheet
 from spreadsheets.draft_spreadsheet.draftboard_worksheet import DraftboardWorksheet
 from spreadsheets.draft_spreadsheet.picks_worksheet import PicksWorksheet
 from spreadsheets.draft_spreadsheet.member_roster_worksheet import MemberRosterWorksheet
 
+from sleeper.ffcalc_api import get_half_ppr_adp_df, get_rookie_adp_df
 from sleeper.sleeper_api import get_draft_picks
 from sleeper.sleeper_league import League
 from sleeper.sleeper_user import User
@@ -29,8 +28,8 @@ class DraftSpreadsheet(SheetManager):
     def __init__(self, spreadsheet: Spreadsheet, league: League, players_df: pd.DataFrame):
         super().__init__(spreadsheet)
 
-        self.players_df = self.sort_by_adp(players_df)
         self.league = league
+        self.players_df = self.sort_by_adp(players_df)
 
         # if self.is_empty():
         self.initialize_spreadsheet()
@@ -75,4 +74,33 @@ class DraftSpreadsheet(SheetManager):
     def sort_by_adp(self, df: pd.DataFrame) -> pd.DataFrame:
         """Sorts the players dataframe by ADP gathered from FantasyFootballCalculator.com API"""
         logger.info(f"Sorting players dataframe by ADP")
-        # TODO: Add weigths to full and standard, 0.4 * standard adp + 0.6 * full PPR ADP
+        if self.league.redraft:
+            adp_df = get_half_ppr_adp_df()
+        
+        else:
+            adp_df = get_rookie_adp_df()
+
+        adp_df = adp_df[adp_df['full_name'].notna()]
+        adp_df.loc[adp_df['position_x'] == 'DEF', 'full_name'] = adp_df.loc[adp_df['position_x'] == 'DEF', 'team_x'] + ' Defense'
+        df['normalized_name'] = df['full_name'].apply(self.normalize_name)
+        adp_df['normalized_name'] = adp_df['full_name'].apply(self.normalize_name)
+
+        merged_df = pd.merge(df, adp_df[['normalized_name', 'adp']], on='normalized_name', how='left')
+
+        max_adp = adp_df['adp'].max()
+        merged_df['adp'] = merged_df['adp'].fillna(max_adp + 1)
+
+        return merged_df.sort_values('adp')
+
+
+    def normalize_name(self, name: str):
+        """Normalized the names of plaeyrs to match accross datasets"""
+        if not isinstance(name, str):
+            name = ""
+        name = name.lower().strip()
+        # Remove common suffixes
+        name = re.sub(r'\b(jr\.?|sr\.?|ii|iii|iv|v)\b', '', name)
+        # Remove punctuation and extra whitespace
+        name = re.sub(r'[^\w\s]', '', name)
+        name = re.sub(r'\s+', ' ', name)
+        return name.strip()

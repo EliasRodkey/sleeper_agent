@@ -54,9 +54,9 @@ class SheetManager:
         """Creates a new worksheet and adds it to the _cache"""
         logger.info(f"Creating a new Worksheet {new_title} in {self}")
 
-        if new_title in self._cache.keys():
+        if new_title in self.list_sheet_titles():
             logger.warning(f"Unable to create Worksheet {new_title}, already exists in {self}")
-            return 
+            return self.get_sheet(new_title, worksheet_class=worksheet_class)
 
         else:
             ws = self.spreadsheet.add_worksheet(new_title, rows, cols)

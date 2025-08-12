@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 
 class League():
     """Represents a sleeper league, contains scoring and roster information"""
-    def __init__(self, league_id: str, league_json: dict=None):
+    def __init__(self, league_id: str, league_json: dict=None, redraft: bool=True):
+        self.redraft = redraft
         self._retrieve_league_info(league_id, league_json)
         self._retrieve_users()
         self._add_draft()
