@@ -18,7 +18,12 @@ class SheetManager:
 
     def is_empty(self) -> bool:
         """Checks to see if the spreadsheet is empty"""
-        return self.list_sheet_titles() == ["Sheet1"]
+        sheetnames = self.list_sheet_titles()
+        if len(sheetnames) == 1:
+            if self.spreadsheet.worksheet(sheetnames[0]).get_all_values() == [[]]:
+                return True
+            
+        return False
     
 
     def get_sheet(self, title: str, worksheet_class: WorksheetWrapper=WorksheetWrapper) -> Worksheet:

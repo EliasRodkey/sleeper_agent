@@ -1,9 +1,9 @@
 import logging
 
-import sleeper_api as sleeper
+import sleeper.sleeper_api as sleeper_api
 
-from sleeper_user import User
-from sleeper_draft import Draft
+from sleeper.sleeper_user import User
+from sleeper.sleeper_draft import Draft
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ class League():
         logger.info(f"Retrieveing league information for league ID {league_id}")
 
         if not league_json:
-            league_json = sleeper.get_league_info(league_id)
+            league_json = sleeper_api.get_league_info(league_id)
         
         # Set league attributes
         self.league_json = league_json
@@ -48,7 +48,7 @@ class League():
         logger.info(f"Retrieving the available rosters for the {self}")
 
         self.users = {}
-        self.rosters_json = sleeper.get_league_rosters(self.id)
+        self.rosters_json = sleeper_api.get_league_rosters(self.id)
 
         for roster in self.rosters_json:
             user_id = roster.get("owner_id")

@@ -1,6 +1,6 @@
 import logging
 
-import sleeper_api as sleeper
+import sleeper.sleeper_api as sleeper_api
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ class Draft():
 
         else:
             logger.info(f"Updating {self} with most recent picks from the draft")
-            self.picks = sleeper.get_draft_picks(self.id)
+            self.picks = sleeper_api.get_draft_picks(self.id)
 
 
     
@@ -30,7 +30,7 @@ class Draft():
         """Collects the data of teh given draft and assigns it to attributes in this class instance."""
         logger.info(f"Retrieveing draft information for {self}")
         
-        self.draft_json = sleeper.get_draft_info(draft_id)
+        self.draft_json = sleeper_api.get_draft_info(draft_id)
         self.id = self.draft_json.get("draft_id")
         self.type = self.draft_json.get("type")
         self.status = self.draft_json.get("status")

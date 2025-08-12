@@ -2,12 +2,10 @@ import datetime
 import logging
 from gspread import Spreadsheet, Worksheet
 import pandas as pd
-from pprint import pprint
 
 from sleeper.sleeper_api import get_players
 from spreadsheets.gspread_client import get_spreadsheet
 from spreadsheets.spreadsheet_names import EFantasySpreadsheets
-from spreadsheets.spreadsheet_utils import convert_single_level_dict_items_to_row, sanitize_matrix
 from spreadsheets.sheet_manager import SheetManager
 from spreadsheets.worksheet_wrapper import WorksheetWrapper
 
@@ -25,8 +23,6 @@ class PlayersDataWorksheet(WorksheetWrapper):
 
     def __init__(self, worksheet: Worksheet):
         super().__init__(worksheet)
-
-        self.append_row(["foo", "bar"])
 
         if self.is_empty():
             logger.error(f"Worksheet not empty! we have a problem {self.is_empty()}")

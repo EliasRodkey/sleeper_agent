@@ -1,6 +1,6 @@
 import logging
 
-import sleeper_api as sleeper
+import sleeper.sleeper_api as sleeper_api
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 class User():
     """Represents a user of the sleeper platform, Retrieves the user ID and using the sleeper API."""
     def __init__(self, username: str):
-        self.info = sleeper.get_user_info(username)
+        self.info = sleeper_api.get_user_info(username)
         self.name = self.info.get("username")
         self.id = self.info.get("user_id")
         
@@ -20,7 +20,7 @@ class User():
         """Collects all of the informaiton for the leagues the user is in and sorts it into an accessible format."""
         logger.info(f"Retrieveing all of the league data for {self}")
 
-        leagues_json = sleeper.get_user_leagues(self.id)
+        leagues_json = sleeper_api.get_user_leagues(self.id)
 
         self.league_names = [league["name"] for league in leagues_json]
 

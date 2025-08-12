@@ -13,12 +13,7 @@ def convert_single_level_dict_to_matrix(dictionnary: dict) -> list[list]:
     formats it into a list of lists list[key, value]
     """
     logger.debug(f"Converting dictionary to layered list.")
-
-    layered_list = []
-    for key, value in dictionnary.items():
-        list.append([key, value])
-    
-    return layered_list
+    return [[key, value] for key, value in dictionnary.items()]
 
 
 def convert_single_level_dict_items_to_row(unique_id: int, dictionnary: dict) -> list:
