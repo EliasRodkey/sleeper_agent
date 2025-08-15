@@ -32,7 +32,7 @@ class WorksheetWrapper:
         self.ws.update(values, cell_range)
 
     
-    def write_dataframe(self, df: pd.DataFrame, clear: bool = True, include_index: bool = False):
+    def write_dataframe(self, df: pd.DataFrame, clear: bool = True, include_index: bool = False, row: int=1, col: int=1):
         """
         Writes a pandas DataFrame to the worksheet.
         Parameters:
@@ -46,7 +46,7 @@ class WorksheetWrapper:
 
         if clear:
             self.ws.clear()
-        set_with_dataframe(self.ws, df, include_index=include_index)
+        set_with_dataframe(self.ws, df, row=row, col=col, include_index=include_index)
 
 
     def read_dataframe(self, evaluate_formulas: bool = False, header_row: int = 1) -> pd.DataFrame:

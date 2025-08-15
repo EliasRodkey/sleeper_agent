@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class DraftboardWorksheet(WorksheetWrapper):
     """Contains the live draftboard for the current league draft"""
 
-    DISPLAY_COLUMNS = ["full_name", "adp", "team", "fantasy_positions", "injury_status", "height", "weight", "age"]
+    HEADERS = ["full_name", "adp", "team", "fantasy_positions", "injury_status", "height", "weight", "age"]
 
     def __init__(self, worksheet: Worksheet):
         super().__init__(worksheet)
@@ -24,4 +24,4 @@ class DraftboardWorksheet(WorksheetWrapper):
         """Updates the current draft board with a new DataFrame without the most recent picks"""
         logger.info(f"Updating {self} with most recent pick")
         self.clear()
-        self.write_dataframe(draftboard_df[self.DISPLAY_COLUMNS])
+        self.write_dataframe(draftboard_df[self.HEADERS])

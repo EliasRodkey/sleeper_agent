@@ -10,20 +10,36 @@ logger = logging.getLogger(__name__)
 
 
 
-class League():
+class League:
     """Represents a sleeper league, contains scoring and roster information"""
     def __init__(self, league_id: str, league_json: dict=None, redraft: bool=True):
         self.redraft = redraft
         self._retrieve_league_info(league_id, league_json)
         self._retrieve_users()
+        self.id_username_map = {user_id: user.name for user_id, user in self.users.items()}
+        self.username_id_map = {user.name: user_id for user_id, user in self.users.items()}
+
         self._add_draft()
 
         logger.info(f"Initialized {self}")
     
 
-    def update_rosters(self):
+    def update_rosters(self, players_df):
         """Retrieves new roster data and updates the rosters of the users in the league"""
-        pass
+        logger.info(f"Updating the rosters for {self}")
+        rosters = sleeper_api.get_league_rosters(self.id)
+        for roster in rosters:
+
+            owner_id = roster['owner_id']
+            if owner_id == None:
+                logger.warning(f"Bot user detected, skipping roster update.")
+
+            else:
+                if roster.get("players") == None:
+                    logger.info(f"Roster is empty for {self.users[owner_id].name }. Skipping update.")
+
+                else:
+                    self.users[owner_id].set_roster(roster, players_df)
 
 
     def _retrieve_league_info(self, league_id:str, league_json: dict | None):
@@ -54,8 +70,7 @@ class League():
         for roster in self.rosters_json:
             user_id = roster.get("owner_id")
             user = User(user_id)
-            user.set_roster(roster)
-            self.users[user.name] = user
+            self.users[user.id] = user
     
 
     def _add_draft(self):

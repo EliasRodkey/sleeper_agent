@@ -13,7 +13,7 @@ class SheetManager:
         self.spreadsheet = spreadsheet
         self.name = self.spreadsheet.title
         self.id = self.spreadsheet.id
-        self._cache = {}
+        self._cache = self._init_cache()
 
 
     def is_empty(self) -> bool:
@@ -29,10 +29,8 @@ class SheetManager:
     def get_sheet(self, title: str, worksheet_class: WorksheetWrapper=WorksheetWrapper) -> Worksheet:
         """Retrieves a single worksheet object and returns it"""
         logger.info(f"Retrieving worksheet {title} from {self}")
-
-        if title not in self._cache:
-            ws = self.spreadsheet.worksheet(title)
-            self._cache[title] = worksheet_class(ws)
+        ws = self.spreadsheet.worksheet(title)
+        self._cache[title] = worksheet_class(ws)
         return self._cache[title]
 
 
@@ -92,12 +90,18 @@ class SheetManager:
         
         while len(self.list_sheet_titles()) > 1:
             next_sheet = self.list_sheet_titles()[-1]
-            logger.info(f"Deleting Worksheet {next_sheet} from {self}")
-            
-            self.spreadsheet.del_worksheet(self._cache[next_sheet].ws)
+            self.delete_sheet(next_sheet)
         
         self.rename_sheet("Sheet1", title=self.list_sheet_titles()[0])
         self.clear_cache()
+    
+
+    def _init_cache(self) -> dict:
+        """Initialized the cache with the names of the worksheets in the spreadsheet"""
+        return {
+            title: WorksheetWrapper(self.spreadsheet.worksheet(title)) for title in self.list_sheet_titles()
+        }
+
     
     
     def __repr__(self):
