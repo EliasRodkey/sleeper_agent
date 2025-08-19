@@ -46,11 +46,19 @@ class User:
         logger.error(f"No leagues found called {league_name} for user {self.name}, available leagues: {self.league_names}")
 
     
-    def set_roster(self, roster_json: dict, player_df: pd.DataFrame):
+    def set_roster(self, roster_obj: dict | pd.DataFrame, player_df: pd.DataFrame):
         """Sets the roster attribute for the user"""
         logger.info(f"Updating current roster information for {self}")
-        self.season_stats = roster_json.pop("settings")
-        self.roster = Roster(roster_json, player_df)
+        if isinstance(roster_obj, dict):
+            self.season_stats = roster_obj.pop("settings")
+        elif isinstance(roster_obj, pd.DataFrame):
+            self.season_stats = {}
+            roster_obj = roster_obj[roster_obj["picked_by"] == self.id]
+
+        else:
+            logger.error(f"Roster data not in a valid format: {type(roster_obj)}\n{roster_obj}")
+
+        self.roster = Roster(roster_obj, player_df)
 
 
     def __repr__(self):

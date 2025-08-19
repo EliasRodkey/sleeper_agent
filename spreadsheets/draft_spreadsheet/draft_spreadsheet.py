@@ -24,15 +24,15 @@ class DraftSpreadsheet(SheetManager):
     LEAGUE_SETTINGS = "league_settings"
     DRAFTBOARD = "draftboard"
     PICKS = "picks"
-    MY_TEAM = "thecondor"
+    MY_ROSTER = "my_roster"
 
-    def __init__(self, spreadsheet: Spreadsheet, league: League, players_df: pd.DataFrame):
+    def __init__(self, my_user: User, spreadsheet: Spreadsheet, league: League, players_df: pd.DataFrame):
         super().__init__(spreadsheet)
 
         self.league = league
         self.draft = self.league.draft
         self.players_df = self._sort_by_adp(players_df)
-        self.my_user = self.league.users[self.league.username_id_map[self.MY_TEAM]]
+        self.my_user = my_user
         
         if not self.is_empty():
             self.clear_spreadsheet()
@@ -80,7 +80,7 @@ class DraftSpreadsheet(SheetManager):
         logger.info(f"Creating new user worksheet for {user.name}")
 
         bot_user = 0
-        if user.name == self.MY_TEAM:
+        if user.name == self.my_user.name:
             user_ws = self.create_sheet(f"my_roster", MemberRosterWorksheet)
 
         elif user.name == "none":
@@ -93,33 +93,66 @@ class DraftSpreadsheet(SheetManager):
         user_ws.set_user(user)
 
 
-    def update_draftboard(self) -> bool:
+    def update_draftboard_spreadsheet(self) -> bool:
         """
         Updates the draftboard with a new pick, removing it from the draftboard worksheet and moving it to the picks worksheet and respective rosters.
         Returns boolean if the draft spreadsheet was successfully updates or not.
         """
-        logger.info(f"Updating {self} with new draftboard, picks, and rosters")
+        logger.debug(f"Updating the draft spreadsheet depending on the current status of the draft.")
 
-        if (self.draft.picks == {}) or (self.draft.picks == self.draft.last_picks):
-            logger.info(f"{self} not updated, no new picks with last refresh")
-            time.sleep(1)
-            
-            return False
+        self.draft.update_picks()
+        status = self.draft.status
+        logger.debug(f"Current draft status: {status}")
 
-        else:
-            self.last_picks_json = self.draft.picks
-            picks_df = self._convert_picks_json_to_df(self.draft.picks)
+        match status:
+            case self.draft.DRAFTING:
+                if (self.draft.picks == self.draft.last_picks):
+                    update_status = False
+                
+                else:
+                    update_status = self.update_worksheets()
 
-            # TODO: It looks like rosters won't get updated until after the draft. have to build the rosters using the pciks df :(
-            self.league.update_rosters(self.players_df)
-            try:
-                print(self.my_user.roster.json)
-                print(self.my_user.roster.df)
-                print(self.my_user.roster.position_count)
-            except:
-                pass
+            case self.draft.COMPLETE:
+                update_status = self.update_worksheets()
+                
+            case self.draft.PRE_DRAFT:
+                self.draft.wait_until_draft()
+                update_status = False
+
+            case self.draft.PAUSED:
+                self.draft.wait_until_draft_resumes()
+                update_status = False
+
+            case _:
+                logger.error(f"Unrecognized draft status {self.draft.status}")
+                update_status = False
         
-            return True
+        return update_status
+    
+
+    def update_worksheets(self):
+        """Updates the draftboard, picks, and my_roster worksheets with the latest picks"""
+        # Turn the picks API return into a df and merge with player data
+        picks_df = self._convert_picks_json_to_df(self.draft.picks)
+        self.picks_df = self._merge_picks_with_players(picks_df, self.players_df)
+
+        # Update the picks WS with new picks
+        picks_ws = self.get_sheet(self.PICKS)
+        picks_ws.update_picks(self.picks_df)
+
+        # Update the user roster with new picks
+        self.my_user.set_roster(self.picks_df, self.players_df)
+        self.my_roster = self.my_user.roster
+        my_team_ws = self.get_sheet(self.MY_ROSTER)
+        my_team_ws.update_position_count()
+        my_team_ws.update_roster()
+        
+        # Subtract the picked players from the players df to get the remaining players and repost to draftboard
+        self.remaining_players_df = self._get_remaining_players(self.players_df, self.picks_df)
+        draftboard_ws = self.get_sheet(self.DRAFTBOARD)
+        draftboard_ws.update_draftboard(self.remaining_players_df)
+
+        return True
         
 
     def _convert_picks_json_to_df(self, picks: dict) -> pd.DataFrame:
@@ -171,3 +204,37 @@ class DraftSpreadsheet(SheetManager):
         name = re.sub(r'[^\w\s]', '', name)
         name = re.sub(r'\s+', ' ', name)
         return name.strip()
+    
+
+    def _merge_picks_with_players(self, picks_df: pd.DataFrame, players_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Enriches draft picks with player metadata by merging on 'player_id'. 
+        Returns a DataFrame indexed by 'player_id', sorted by round and pick number.
+        """
+        picks_df["player_id"] = picks_df["player_id"].astype(str)
+        players_df["player_id"] = players_df["player_id"].astype(str)
+
+        merged_df = picks_df.merge(players_df, on="player_id", how="left", suffixes=("_player", ""))
+
+        # Optional: sort and index for roster logic
+        merged_df = merged_df.sort_values(by=["round", "pick_no"])
+        merged_df = merged_df.set_index("player_id")
+
+        for col in merged_df.columns:
+            if merged_df[col].isna().all():
+                merged_df.drop(columns=col, inplace=True)
+
+        return merged_df
+    
+
+    def _get_remaining_players(self, players_df: pd.DataFrame, drafted_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Returns a DataFrame of players who have not been drafted.
+        Assumes 'player_id' is a column in both DataFrames.
+        """
+        # Ensure player_id is a column (not index)
+        drafted_ids = drafted_df.index if drafted_df.index.name == "player_id" else drafted_df["player_id"]
+        
+        remaining_df = players_df[~players_df["player_id"].isin(drafted_ids)].copy()
+        
+        return remaining_df

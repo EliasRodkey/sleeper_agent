@@ -13,11 +13,10 @@ logger = logging.getLogger(__name__)
 class MemberRosterWorksheet(WorksheetWrapper):
    """Contains the live picks and roster for the members of the current league draft"""
 
-   HEADERS = ["pick_no", "picked_by", "draft_slot", "full_name", "adp", "team", "fantasy_positions", "injury_status", "height", "weight", "age"]
+   HEADERS = ["pick_no", "full_name", "adp", "fantasy_positions", "injury_status", "team", "height", "weight", "age"]
 
    def __init__(self, worksheet: Worksheet):
       super().__init__(worksheet)
-
 
       logger.info(f"Initialized {self}")
 
@@ -41,11 +40,13 @@ class MemberRosterWorksheet(WorksheetWrapper):
       self.write_cell_range(user_info)
 
 
-   def update_roster(self):
-      """Updates the member roster with a new roster dataframe"""
-      pass
-
-
    def update_position_count(self):
       """Updates the member roster with a new position count"""
-      pass
+      logger.info(f"Updating position counts for {self.user}")
+      self.write_dataframe(self.user.roster.position_count, clear=False, row=4, col=1)
+
+
+   def update_roster(self):
+      """Updates the member roster with a new roster dataframe"""
+      logger.info(f"Updating draft roster for {self.user}")
+      self.write_dataframe(self.user.roster.df[self.HEADERS], clear=False, row=12, col=1)

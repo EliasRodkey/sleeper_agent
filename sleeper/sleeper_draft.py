@@ -31,7 +31,7 @@ class Draft:
         Updates the picks attribute with the most recent picks from the draft.
         Returns the draft status as a string.
         """
-        logger.info(f"Updating {self} with most recent picks from the draft")
+        logger.debug(f"Updating {self} with most recent picks from the draft")
         self.last_picks = self.picks # convert last_picks to the current picks before update
         draft_status = self.update_status()
         self.status = draft_status
@@ -49,7 +49,7 @@ class Draft:
 
     def _retrieve_draft_info(self, draft_id: str):
         """Collects the data of teh given draft and assigns it to attributes in this class instance."""
-        logger.info(f"Retrieveing draft information for {self}")
+        logger.debug(f"Retrieveing draft information for {self}")
         
         self.draft_json = sleeper_api.get_draft_info(draft_id)
         self.id = self.draft_json.get("draft_id")
@@ -57,12 +57,13 @@ class Draft:
         self.status = self.draft_json.get("status")
         self.settings = self.draft_json.get("settings")
         self.order = self.draft_json.get("draft_order")
-        raw_start_time =self.draft_json.get("start_time")
+        raw_start_time = self.draft_json.get("start_time")
         if raw_start_time:
             start_time_dt = datetime.fromtimestamp(float(raw_start_time) / 1000)
-            self.start_time =start_time_dt
+            self.start_time = start_time_dt
         else:
-            self.start_time = datetime.now()
+            logger.warning(f"Start time not set, setting start time to 'None'")
+            self.start_time = None
     
 
     def wait_until_draft_resumes(self):
@@ -75,6 +76,9 @@ class Draft:
 
     def wait_until_draft(self):
         """Wait until the draft has started then continue"""
+        if self.start_time == None:
+            logger.info(f"No start time set, waiting for draft to start...")
+            return
         time_to_wait = self.start_time - datetime.now()
         if time_to_wait < timedelta():
             logger.warning(f"{self} past start time by {-time_to_wait}, status={self.status}")
