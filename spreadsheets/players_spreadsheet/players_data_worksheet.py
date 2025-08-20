@@ -2,6 +2,7 @@ import logging
 import pandas as pd
 
 from sleeper.sleeper_api import get_players
+from spreadsheets.spreadsheet_utils import normalize_name
 from spreadsheets.worksheet_wrapper import WorksheetWrapper, Worksheet
 
 logging.basicConfig(format="%(asctime)s [%(levelname)s] %(message)s", level=logging.INFO)
@@ -66,9 +67,10 @@ class PlayersDataWorksheet(WorksheetWrapper):
         # Add defense abbreviation to full_name column
         players_df.loc[players_df['position'] == 'DEF', 'full_name'] = players_df.loc[players_df['position'] == 'DEF', 'team'] + ' Defense'
 
+        players_df['normalized_name'] = players_df['full_name'].apply(normalize_name)
+
         # Fill nulls
         for col in players_df.columns:
             players_df[col] = players_df[col].astype(str).fillna(default_val)
-
 
         return players_df

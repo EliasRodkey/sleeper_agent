@@ -55,12 +55,12 @@ class PlayersSpreadsheet(SheetManager):
     def update_player_data(self, update_description: str, force: bool=False):
         """Updates the player data in the player_data worksheet and posts a time log"""
         update = self.check_update_required()
-
+        
         if update or force:
-            player_ws = self.get_sheet(self.PLAYER_DATA)
+            player_ws = self._cache[self.PLAYER_DATA]
             player_ws.update_players()
 
-            logs_ws = self.get_sheet(self.UPDATE_LOGS)
+            logs_ws = self._cache[self.UPDATE_LOGS]
             logs_ws.post_log(description=update_description)
         
         else:
@@ -69,7 +69,7 @@ class PlayersSpreadsheet(SheetManager):
 
     def check_update_required(self) -> bool:
         """Checks the update_logs sheet to see if the last player update was within the last 24 hours"""
-        logs_ws = self.get_sheet(self.UPDATE_LOGS)
+        logs_ws = self._cache[self.UPDATE_LOGS]
         last_log = logs_ws.retrieve_last_log()
 
         last_log_datetime_str = last_log["datetime_stamp"]
@@ -81,7 +81,7 @@ class PlayersSpreadsheet(SheetManager):
     def retrieve_player_data(self) -> pd.DataFrame:
         """Retrieves the all of the player data from the spreadsheet and returns it as a pd.Dataframe"""
         logger.info(f"Retrieving player data from {self}")
-        player_data_ws = self.get_sheet(self.PLAYER_DATA)
+        player_data_ws = self.get_sheet(self.PLAYER_DATA, PlayersDataWorksheet)
         return player_data_ws.read_dataframe()
 
 

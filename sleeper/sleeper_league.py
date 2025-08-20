@@ -77,7 +77,7 @@ class League:
         """Adds a draft object to the league."""
         logger.info(f"Adding draft ID {self.draft_id} to {self}")
 
-        self.draft = Draft(self.draft_id)
+        self.draft = Draft(self)
     
 
     def __repr__(self):

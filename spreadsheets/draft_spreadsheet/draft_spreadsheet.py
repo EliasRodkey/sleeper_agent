@@ -1,7 +1,5 @@
 import logging
 import pandas as pd
-import re
-import time
 
 from spreadsheets.sheet_manager import SheetManager, Spreadsheet
 from spreadsheets.draft_spreadsheet.league_settings_worksheet import LeagueSettingsWorksheet
@@ -9,7 +7,6 @@ from spreadsheets.draft_spreadsheet.draftboard_worksheet import DraftboardWorksh
 from spreadsheets.draft_spreadsheet.picks_worksheet import PicksWorksheet
 from spreadsheets.draft_spreadsheet.member_roster_worksheet import MemberRosterWorksheet
 
-from sleeper.ffcalc_api import get_half_ppr_adp_df, get_rookie_adp_df
 from sleeper.sleeper_league import League
 from sleeper.sleeper_user import User
 
@@ -31,7 +28,7 @@ class DraftSpreadsheet(SheetManager):
 
         self.league = league
         self.draft = self.league.draft
-        self.players_df = self._sort_by_adp(players_df)
+        self.players_df = players_df
         self.my_user = my_user
         
         if not self.is_empty():
@@ -133,108 +130,20 @@ class DraftSpreadsheet(SheetManager):
     def update_worksheets(self):
         """Updates the draftboard, picks, and my_roster worksheets with the latest picks"""
         # Turn the picks API return into a df and merge with player data
-        picks_df = self._convert_picks_json_to_df(self.draft.picks)
-        self.picks_df = self._merge_picks_with_players(picks_df, self.players_df)
+        picks_df, remaining_players_df = self.draft.retrieve_draft_state(self.players_df)
 
         # Update the picks WS with new picks
-        picks_ws = self.get_sheet(self.PICKS)
-        picks_ws.update_picks(self.picks_df)
+        picks_ws = self.get_sheet(self.PICKS, PicksWorksheet)
+        picks_ws.update_picks(picks_df)
 
         # Update the user roster with new picks
-        self.my_user.set_roster(self.picks_df, self.players_df)
-        self.my_roster = self.my_user.roster
-        my_team_ws = self.get_sheet(self.MY_ROSTER)
+        self.my_user.set_roster(picks_df, self.players_df)
+        my_team_ws = self.get_sheet(self.MY_ROSTER, MemberRosterWorksheet)
         my_team_ws.update_position_count()
         my_team_ws.update_roster()
         
         # Subtract the picked players from the players df to get the remaining players and repost to draftboard
-        self.remaining_players_df = self._get_remaining_players(self.players_df, self.picks_df)
-        draftboard_ws = self.get_sheet(self.DRAFTBOARD)
-        draftboard_ws.update_draftboard(self.remaining_players_df)
+        draftboard_ws = self.get_sheet(self.DRAFTBOARD, DraftboardWorksheet)
+        draftboard_ws.update_draftboard(remaining_players_df)
 
         return True
-        
-
-    def _convert_picks_json_to_df(self, picks: dict) -> pd.DataFrame:
-        """Converts the picks json API return to a dataframe with other metadata"""
-        picks_df = pd.DataFrame.from_dict(picks)
-
-        picks_df.drop(columns=["is_keeper", "metadata"], inplace=True)
-
-        # Merge player info into picks_df
-        picks_df = picks_df.merge(self.players_df, on='player_id', how='left')
-
-        # Add username column to picks_df
-        picks_df['username'] = picks_df['picked_by'].map(self.league.id_username_map)
-        picks_df['username'] = picks_df['username'].fillna('Bot')
-
-        return picks_df
-
-
-    def _sort_by_adp(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Sorts the players dataframe by ADP gathered from FantasyFootballCalculator.com API"""
-        logger.info(f"Sorting players dataframe by ADP")
-        if self.league.redraft:
-            adp_df = get_half_ppr_adp_df()
-        
-        else:
-            adp_df = get_rookie_adp_df()
-
-        adp_df = adp_df[adp_df['full_name'].notna()]
-        adp_df.loc[adp_df['position_x'] == 'DEF', 'full_name'] = adp_df.loc[adp_df['position_x'] == 'DEF', 'team_x'] + ' Defense'
-        df['normalized_name'] = df['full_name'].apply(self._normalize_name)
-        adp_df['normalized_name'] = adp_df['full_name'].apply(self._normalize_name)
-
-        merged_df = pd.merge(df, adp_df[['normalized_name', 'adp']], on='normalized_name', how='left')
-
-        max_adp = adp_df['adp'].max()
-        merged_df['adp'] = merged_df['adp'].fillna(max_adp + 1)
-
-        return merged_df.sort_values('adp')
-
-
-    def _normalize_name(self, name: str):
-        """Normalized the names of plaeyrs to match accross datasets"""
-        if not isinstance(name, str):
-            name = ""
-        name = name.lower().strip()
-        # Remove common suffixes
-        name = re.sub(r'\b(jr\.?|sr\.?|ii|iii|iv|v)\b', '', name)
-        # Remove punctuation and extra whitespace
-        name = re.sub(r'[^\w\s]', '', name)
-        name = re.sub(r'\s+', ' ', name)
-        return name.strip()
-    
-
-    def _merge_picks_with_players(self, picks_df: pd.DataFrame, players_df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Enriches draft picks with player metadata by merging on 'player_id'. 
-        Returns a DataFrame indexed by 'player_id', sorted by round and pick number.
-        """
-        picks_df["player_id"] = picks_df["player_id"].astype(str)
-        players_df["player_id"] = players_df["player_id"].astype(str)
-
-        merged_df = picks_df.merge(players_df, on="player_id", how="left", suffixes=("_player", ""))
-
-        # Optional: sort and index for roster logic
-        merged_df = merged_df.sort_values(by=["round", "pick_no"])
-        merged_df = merged_df.set_index("player_id")
-
-        for col in merged_df.columns:
-            if merged_df[col].isna().all():
-                merged_df.drop(columns=col, inplace=True)
-
-        return merged_df
-    
-
-    def _get_remaining_players(self, players_df: pd.DataFrame, drafted_df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Returns a DataFrame of players who have not been drafted.
-        Assumes 'player_id' is a column in both DataFrames.
-        """
-        # Ensure player_id is a column (not index)
-        drafted_ids = drafted_df.index if drafted_df.index.name == "player_id" else drafted_df["player_id"]
-        
-        remaining_df = players_df[~players_df["player_id"].isin(drafted_ids)].copy()
-        
-        return remaining_df

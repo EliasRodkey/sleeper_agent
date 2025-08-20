@@ -1,5 +1,5 @@
 import logging
-from string import ascii_uppercase as alphabet
+import re
 from gspread.utils import rowcol_to_a1, a1_to_rowcol
 
 
@@ -47,3 +47,16 @@ def sanitize_matrix(matrix: list[list], default_val: str="N/A"):
         [cell if cell is not None else default_val for cell in row]
         for row in matrix
     ]
+
+
+def normalize_name(name: str):
+        """Normalized the names of players to match accross datasets"""
+        if not isinstance(name, str):
+            name = ""
+        name = name.lower().strip()
+        # Remove common suffixes
+        name = re.sub(r'\b(jr\.?|sr\.?|ii|iii|iv|v)\b', '', name)
+        # Remove punctuation and extra whitespace
+        name = re.sub(r'[^\w\s]', '', name)
+        name = re.sub(r'\s+', ' ', name)
+        return name.strip()

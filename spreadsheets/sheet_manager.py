@@ -29,9 +29,8 @@ class SheetManager:
     def get_sheet(self, title: str, worksheet_class: WorksheetWrapper=WorksheetWrapper) -> Worksheet:
         """Retrieves a single worksheet object and returns it"""
         logger.info(f"Retrieving worksheet {title} from {self}")
-        if title not in self._cache.keys():
-            ws = self.spreadsheet.worksheet(title)
-            self._cache[title] = worksheet_class(ws)
+        ws = self.spreadsheet.worksheet(title)
+        self._cache[title] = worksheet_class(ws)
         return self._cache[title]
 
 

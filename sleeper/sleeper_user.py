@@ -53,7 +53,7 @@ class User:
             self.season_stats = roster_obj.pop("settings")
         elif isinstance(roster_obj, pd.DataFrame):
             self.season_stats = {}
-            roster_obj = roster_obj[roster_obj["picked_by"] == self.id]
+            roster_obj = roster_obj[roster_obj["picked_by"] == self.id].copy()
 
         else:
             logger.error(f"Roster data not in a valid format: {type(roster_obj)}\n{roster_obj}")
