@@ -133,8 +133,14 @@ Uses `pleasant_database` (SQLAlchemy/SQLite). Two separate database files:
 
 **`data/draft_history.db`** — `DatabaseDraftBackend`
 - Persistent across all drafts, never wiped
-- Uses `upsert()` so re-running on a live draft is safe
+- Uses `upsert(lookup={...}, **update_kwargs)` so re-running on a live draft is safe
 - Enables future post-draft analysis
+
+> **`pleasant_database` API notes:**
+> - `upsert` signature: `upsert(lookup: dict, **kwargs)` — first arg is the match dict, e.g. `db.upsert({"draft_id": "abc"}, league_name="X", year=2025)`
+> - Default DB directory is `./data/dbs` — override by passing `directory="data"` to `DatabaseFile` to keep files at `./data/`
+> - Sessions are **not thread-safe** — `PickPoller` (background thread) must use its own `DatabaseManager` instance, not share one with the main thread. Create a second manager instance inside `PickPoller.run()`.
+> - The package auto-creates `./data/logs` for its own logging on import.
 
 ### 4.3 Google Sheets Backend (`storage/sheets_backend.py`)
 
