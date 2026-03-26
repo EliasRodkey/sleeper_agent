@@ -37,13 +37,14 @@ A Fantasy Football Draft Automation Suite that:
 
 ```
 sleeper_agent/
-├── sleeper/                        (unchanged — API & data layer)
-│   ├── sleeper_api.py
-│   ├── sleeper_user.py
-│   ├── sleeper_league.py
-│   ├── sleeper_draft.py
-│   ├── sleeper_roster.py
-│   └── ffcalc_api.py
+├── sleeper/                        (mostly unchanged)
+│   ├── sleeper_api.py              (unchanged)
+│   ├── sleeper_user.py             (unchanged)
+│   ├── sleeper_league.py           (unchanged)
+│   ├── sleeper_draft.py            (unchanged)
+│   ├── sleeper_roster.py           (unchanged)
+│   ├── ffcalc_api.py               (unchanged)
+│   └── player_utils.py             (NEW — clean_players_json() extracted from PlayersDataWorksheet)
 ├── storage/                        (NEW — swappable storage layer)
 │   ├── __init__.py
 │   ├── base.py                     ABCs: ReferenceStorageBackend, DraftStorageBackend
@@ -59,6 +60,8 @@ sleeper_agent/
 │   └── agent_tools.py              (NEW — tool definitions + implementations)
 ├── config.py                       (NEW — env var loading with interactive fallback)
 ├── draft_session.py                (NEW — in-memory state: board, picks, roster)
+├── cheat_sheet.py                  (NEW — standalone Excel import + normalize/merge function)
+├── poller.py                       (NEW — PickPoller background thread)
 ├── repl.py                         (NEW — terminal REPL: slash commands + free-form chat)
 ├── run_draft.py                    (NEW — main entry point)
 ├── .env.example                    (NEW — env var template)
@@ -152,24 +155,31 @@ Thin wrappers delegating to existing spreadsheet classes:
 
 All tables extend `pleasant_database.BaseTable` (SQLAlchemy declarative base).
 
-**`NFLPlayerRow`** — primary key: `player_id` (String, not autoincrement)
+**`NFLPlayerRow`** — `id` (Integer PK autoincrement) + `player_id` (String, unique)
 ```
-player_id (String PK), full_name, normalized_name, fantasy_positions,
-team, age (Float), last_updated (DateTime), [+ optional stat columns as String/Float]
+id (PK autoincrement), player_id (String unique), full_name, normalized_name,
+position, fantasy_positions, team, age (Float), height, weight, injury_status,
+last_updated (DateTime)
 ```
-> Note: Uses `clear_table()` + `append_dataframe()` for writes; `to_dataframe()` for reads.
-> `fetch_item_by_id()` is not used (it expects an Integer `id` column).
+> Note: Uses `upsert({"player_id": "..."}, ...)` for individual row updates, or `clear_table()` + `append_dataframe()` for bulk reload.
+
+**`ADPRow`** — `id` (Integer PK autoincrement) + `normalized_name` (String, unique)
+```
+id (PK autoincrement), normalized_name (String unique), full_name, adp (Float),
+position, team
+```
+> Always wiped and reloaded fresh each session via `clear_table()` + `append_dataframe()`.
 
 **`DraftRow`** — primary key: `id` (Integer, autoincrement)
 ```
-id (PK), draft_id (String, UniqueConstraint), league_name, year (Integer),
+id (PK), draft_id (String, unique), league_name, year (Integer),
 draft_type, created_at (DateTime)
 ```
 
 **`PickRow`** — primary key: `id` (Integer, autoincrement)
 ```
 id (PK), draft_id (String), pick_no (Integer), round_num (Integer),
-player_id (String), username (String)
+player_id (String), picked_by (String), username (String)
 UniqueConstraint("draft_id", "pick_no")
 ```
 
@@ -445,26 +455,57 @@ data/
 
 ---
 
-## 14. Implementation Order
+## 14. Critical Implementation Gotchas
 
-| Step | File | Dependencies |
-|---|---|---|
-| 1 | `storage/tables.py` | none |
-| 2 | `storage/base.py` | none |
-| 3 | `storage/db_backend.py` | tables, base |
-| 4 | `storage/sheets_backend.py` | existing spreadsheets/, base |
-| 5 | `config.py` | none |
-| 6 | `draft_session.py` | sleeper/, ffcalc_api, spreadsheet_utils |
-| 7 | `agents/agent_tools.py` | draft_session |
-| 8 | `agents/draft_agent.py` | agent_tools, draft_status_prompt, anthropic |
-| 9 | `repl.py` | draft_session, draft_agent |
-| 10 | `run_draft.py` + `PickPoller` | everything |
-| 11 | `.env.example` | — |
-| 12 | `CLAUDE.md` update | — |
+### G1: `clean_df()` is tangled into a gspread class
+`PlayersDataWorksheet.clean_df()` is an instance method but has zero dependency on gspread — it is pure pandas logic. It must be extracted into `sleeper/player_utils.py` as `clean_players_json(raw_dict) -> pd.DataFrame` before the DB backend can clean player data without a Sheets connection. `PlayersDataWorksheet.update_players()` should then call this shared function.
+
+### G2: `picks_df` column schema must be pre-defined
+`DraftSession.picks_df` must be initialized as an empty DataFrame with the correct columns (`pick_no`, `round`, `player_id`, `picked_by`, `username`, `full_name`, `position`, `team`) even before any picks are made — otherwise REPL commands reading `picks_df` will fail with `KeyError`.
+
+### G3: Resume mid-draft — sort by `pick_no` before applying
+When loading existing picks from `draft_backend.get_picks()` at startup, always sort by `pick_no` ascending before calling `session.apply_pick()` in order. Out-of-order application corrupts the board.
+
+### G4: `is_my_turn()` must guard against `None` draft order
+`draft.order` is a dict mapping `user_id → slot` that may be `None` in `PRE_DRAFT` status. `is_my_turn()` must return `False` (not raise) when order is `None`.
+
+### G5: Poller must debounce `on_my_turn`
+Without a flag, `on_my_turn` fires every poll cycle while the user's pick slot is still open. Add a `_my_turn_notified: bool` instance variable to `PickPoller`, set it `True` after calling `on_my_turn()`, and reset it to `False` when any new pick is detected.
+
+### G6: `SheetsDraftBackend` requires `User`, `League`, and `players_df` to exist first
+`DraftSpreadsheet.__init__()` requires all three as constructor args and immediately clears the spreadsheet. The sheets backend cannot be constructed by the factory function at startup like the DB backend can. **Resolution:** Accept these as deferred constructor args on `SheetsDraftBackend`, or construct it lazily (pass a factory lambda to `create_storage_backends()`).
+
+### G7: `DraftSession.apply_pick()` must use `user.id` not `user.name`
+Pick dicts from the Sleeper API contain `picked_by` as the Sleeper **user ID string**, not the username. `DraftSession.apply_pick()` must compare `pick_dict["picked_by"] == self.user.id` (not `self.user.name`) to detect the user's own picks.
+
+### G8: `data/` directory must exist before `DatabaseFile` is instantiated
+Call `os.makedirs("data", exist_ok=True)` in `run_draft.py` before constructing any DB backend. `pleasant_database` auto-creates `data/dbs` (its default), but since we override to `directory="data"`, the `data/` directory must already exist.
 
 ---
 
-## 15. Verification
+## 15. Implementation Order
+
+| Step | File | Notes |
+|---|---|---|
+| 1 | `storage/tables.py` | No deps |
+| 2 | `storage/base.py` | No deps |
+| 3 | `storage/db_backend.py` | Deps: tables, base |
+| 4 | `storage/sheets_backend.py` | Deps: existing spreadsheets/, base |
+| 5 | `sleeper/player_utils.py` | Extract `clean_players_json()` from `PlayersDataWorksheet.clean_df()` |
+| 6 | `config.py` | No deps |
+| 7 | `cheat_sheet.py` | Deps: spreadsheet_utils.normalize_name |
+| 8 | `draft_session.py` | Deps: sleeper/, player_utils |
+| 9 | `agents/agent_tools.py` | Deps: draft_session |
+| 10 | `agents/draft_agent.py` | Deps: agent_tools, draft_status_prompt, anthropic |
+| 11 | `poller.py` | Deps: sleeper_draft, draft_session |
+| 12 | `repl.py` | Deps: draft_session, draft_agent, agent_tools |
+| 13 | `run_draft.py` | Wires everything |
+| 14 | `.env.example` | — |
+| 15 | Update `CLAUDE.md` | Add new deps, new entry point |
+
+---
+
+## 16. Verification
 
 ### End-to-End Test
 1. Copy `.env.example` → `.env`, fill in `SLEEPER_USERNAME`, `SLEEPER_LEAGUE_NAME`, `ANTHROPIC_API_KEY`
